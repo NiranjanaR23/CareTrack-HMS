@@ -1,0 +1,1 @@
+function confirmDelete(msg='Delete this record?'){return confirm(msg)}
