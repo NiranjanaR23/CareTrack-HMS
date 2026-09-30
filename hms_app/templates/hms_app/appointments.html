@@ -1,0 +1,182 @@
+{% extends 'hms_app/base.html' %}
+
+{% block title %}Appointments — CareTrack HMS{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 fw-bold mb-1">📅 Appointments & Token Queue</h1>
+    <p class="text-muted mb-0">Book patient tokens, track consultation progress, and update status</p>
+  </div>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#bookModal">
+    <i class="bi bi-calendar-plus"></i> + Book New Appointment
+  </button>
+</div>
+
+{% if msg %}
+  <div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle me-2"></i>{{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+{% endif %}
+{% if err %}
+  <div class="alert alert-danger alert-dismissible fade show"><i class="bi bi-exclamation-triangle me-2"></i>{{ err }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+{% endif %}
+
+<!-- Filters -->
+<div class="card p-3 mb-4">
+  <form method="GET" class="row g-3">
+    <div class="col-md-5">
+      <label class="form-label small fw-semibold">Appointment Date</label>
+      <input type="date" name="date" class="form-control" value="{{ date_filter }}" onchange="this.form.submit()">
+    </div>
+    <div class="col-md-5">
+      <label class="form-label small fw-semibold">Filter by Doctor</label>
+      <select name="doctor_id" class="form-select" onchange="this.form.submit()">
+        <option value="0">All Doctors</option>
+        {% for doc in doctors %}
+          <option value="{{ doc.id }}" {% if doc_filter == doc.id %}selected{% endif %}>Dr. {{ doc.name }} ({{ doc.department.name|default:"General" }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2 d-flex align-items-end">
+      <button type="submit" class="btn btn-primary w-100">Filter</button>
+    </div>
+  </form>
+</div>
+
+<!-- Appointments Queue Table -->
+<div class="card shadow-sm">
+  <div class="card-header bg-white py-3">
+    <h5 class="mb-0 fw-bold"><i class="bi bi-clock-history text-primary me-2"></i> Queue for {{ date_filter }}</h5>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Token #</th>
+          <th>Patient Details</th>
+          <th>Attending Doctor</th>
+          <th>Time</th>
+          <th>Priority</th>
+          <th>Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if not appointments %}
+          <tr><td colspan="7" class="text-center py-4 text-muted">No appointments scheduled for this date.</td></tr>
+        {% else %}
+          {% for appt in appointments %}
+            <tr>
+              <td><span class="badge bg-primary fs-6">#{{ appt.token_no }}</span></td>
+              <td>
+                <div class="fw-bold">{{ appt.patient.full_name }}</div>
+                <small class="text-muted">{{ appt.patient.patient_code }} &bull; {{ appt.patient.phone|default:"N/A" }}</small>
+              </td>
+              <td>
+                <div class="fw-semibold">Dr. {{ appt.doctor.name }}</div>
+                <small class="text-muted">{{ appt.doctor.department.name|default:"General" }}</small>
+              </td>
+              <td>{{ appt.appointment_time|time:"H:i" }}</td>
+              <td>
+                {% if appt.priority == 'Emergency' %}
+                  <span class="badge bg-danger">Emergency</span>
+                {% elif appt.priority == 'Urgent' %}
+                  <span class="badge bg-warning text-dark">Urgent</span>
+                {% else %}
+                  <span class="badge bg-light text-dark border">Normal</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if appt.status == 'Waiting' %}
+                  <span class="badge bg-warning text-dark">Waiting</span>
+                {% elif appt.status == 'In Consultation' %}
+                  <span class="badge bg-info text-dark">In Consultation</span>
+                {% elif appt.status == 'Completed' %}
+                  <span class="badge bg-success">Completed</span>
+                {% else %}
+                  <span class="badge bg-secondary">{{ appt.status }}</span>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <form method="POST" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action_status" value="1">
+                  <input type="hidden" name="appointment_id" value="{{ appt.id }}">
+                  <select name="status" class="form-select form-select-sm d-inline-block w-auto" onchange="this.form.submit()">
+                    <option value="Waiting" {% if appt.status == 'Waiting' %}selected{% endif %}>Waiting</option>
+                    <option value="In Consultation" {% if appt.status == 'In Consultation' %}selected{% endif %}>In Consult</option>
+                    <option value="Completed" {% if appt.status == 'Completed' %}selected{% endif %}>Completed</option>
+                    <option value="Cancelled" {% if appt.status == 'Cancelled' %}selected{% endif %}>Cancelled</option>
+                  </select>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: Book Appointment -->
+<div class="modal fade" id="bookModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="POST">
+        {% csrf_token %}
+        <input type="hidden" name="action_book" value="1">
+        <div class="modal-header">
+          <h5 class="modal-title">Book New Appointment</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Select Patient *</label>
+            <select name="patient_id" class="form-select" required>
+              <option value="">-- Choose Patient --</option>
+              {% for p in patients %}
+                <option value="{{ p.id }}">{{ p.full_name }} ({{ p.patient_code }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Select Doctor *</label>
+            <select name="doctor_id" class="form-select" required>
+              <option value="">-- Choose Doctor --</option>
+              {% for d in doctors %}
+                <option value="{{ d.id }}">Dr. {{ d.name }} ({{ d.department.name|default:"General" }})</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Appointment Date *</label>
+            <input type="date" name="appointment_date" class="form-control" required value="{{ date_filter }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Preferred Time</label>
+            <input type="time" name="appointment_time" class="form-control" value="09:00">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Priority Level</label>
+            <select name="priority" class="form-select">
+              <option value="Normal">Normal</option>
+              <option value="Urgent">Urgent</option>
+              <option value="Emergency">Emergency</option>
+            </select>
+          </div>
+
+          <div class="col-12">
+            <label class="form-label fw-semibold">Reason for Visit</label>
+            <input type="text" name="reason" class="form-control" placeholder="Fever, Routine checkup, Follow-up...">
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-calendar-check me-1"></i> Book Appointment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
